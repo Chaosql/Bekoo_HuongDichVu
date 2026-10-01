@@ -1,0 +1,4 @@
+# Compatibility entry point; configuration is shared with the root stack.
+include:
+  - path: ../docker-compose.yml
+    env_file: ../.env
