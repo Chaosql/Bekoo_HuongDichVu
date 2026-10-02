@@ -53,4 +53,7 @@ cho Query, và `-Dtest=JwtEnvironmentTest,ExternalCredentialsTest,AdminEnvironme
 cho Command.
 
 Tài liệu AWS tham khảo: [CHIIKAIWA-BE-AWS-DEPLOYMENT-GUIDE.md](CHIIKAIWA-BE-AWS-DEPLOYMENT-GUIDE.md).
-Repo chưa có pipeline AWS hoặc tài nguyên AWS được triển khai.
+Pipeline AWS đã có trong .github/workflows/deploy-aws.yml.
+Theo lựa chọn chạy MySQL/Redis trên EC2, xem [deploy/SETUP-AWS.md](deploy/SETUP-AWS.md).
+AWS deployment chỉ chạy khi AWS_DEPLOY_ENABLED=true và các GitHub Secrets
+đã cấu hình đầy đủ; chưa có tài nguyên AWS nào được tự động tạo bởi repo.

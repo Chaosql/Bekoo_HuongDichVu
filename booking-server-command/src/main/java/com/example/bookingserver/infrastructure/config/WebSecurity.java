@@ -26,7 +26,8 @@ public class WebSecurity {
     final JwtAuthenticationFilter jwtAuthenticationFilter;
 
     final String[] listUnAuthenticate={
-            "/sign-in"
+            "/actuator/health"
+            , "/sign-in"
             , "/user/forgot-password/send-otp"
             , "/user/forgot-password/verify"
             , "/user/password/otp"
