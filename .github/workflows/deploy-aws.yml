@@ -26,7 +26,7 @@ jobs:
       - name: Build shared library
         run: ./booking-server-query/mvnw -f booking-care-document/pom.xml clean install -B
       - name: Build and test Command
-        run: ./booking-server-command/mvnw -f booking-server-command/pom.xml clean package -B -Dtest=JwtEnvironmentTest,ExternalCredentialsTest,AdminEnvironmentTest
+        run: ./booking-server-command/mvnw -f booking-server-command/pom.xml clean package -B -Dtest=JwtEnvironmentTest,ExternalCredentialsTest,AdminEnvironmentTest,AiFeatureDisabledTest
       - name: Build and test Query
         run: ./booking-server-query/mvnw -f booking-server-query/pom.xml clean package -B -Dtest=JwtEnvironmentTest
       - name: Build runtime-only images

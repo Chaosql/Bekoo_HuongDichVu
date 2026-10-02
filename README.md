@@ -11,7 +11,7 @@ giữ nguyên LICENSE. Hướng dẫn gốc nằm trong README-BEKOO.md.
    và JWT_SECRET. Khi dùng MySQL local với user root, hai mật khẩu MySQL phải
    giống nhau. JWT_SECRET là Base64 của ít nhất 32 byte ngẫu nhiên
    (có thể tạo bằng `openssl rand -base64 32`) và dùng chung cho hai service.
-3. Điền Cloudinary, SMTP, VNPay và API_KEY nếu sử dụng các tính năng tương ứng.
+3. Điền Cloudinary, SMTP và VNPay nếu sử dụng các tính năng tương ứng.
 4. Để ADMIN_EMAIL/ADMIN_PASSWORD trống nếu không cần tạo admin lúc khởi động.
    Nếu tạo admin, điền cả email, password và các trường ADMIN_* về hồ sơ;
    ADMIN_DOB dùng định dạng YYYY-MM-DD. Không có mật khẩu admin mặc định.
@@ -25,7 +25,10 @@ docker compose up -d --build
 
 Command: http://localhost:8083; Query: http://localhost:8084.
 Compose build source trong repo này, không chạy image backend cũ từ Docker Hub.
-MySQL, Redis, Kafka, Elasticsearch và AI chỉ truy cập qua mạng Docker nội bộ.
+MySQL, Redis, Kafka và Elasticsearch chỉ truy cập qua mạng Docker nội bộ.
+AI chỉ là hướng phát triển, được tắt mặc định: không deploy AI container,
+không yêu cầu AI endpoint hoặc OpenAI API key. API sinh dữ liệu bằng GPT cũng
+không được đăng ký. Luồng chat với quản trị viên vẫn được giữ.
 Các compose trong từng module chuyển tới stack gốc qua `include`;
 chức năng này cần Docker Compose 2.20 trở lên.
 
@@ -49,7 +52,7 @@ Yêu cầu JDK 17 và Maven (hoặc Maven Wrapper):
 
 Các test context gốc cần các dịch vụ ngoài và cấu hình runtime.
 Unit test về credential có thể chạy riêng bằng `-Dtest=JwtEnvironmentTest`
-cho Query, và `-Dtest=JwtEnvironmentTest,ExternalCredentialsTest,AdminEnvironmentTest`
+cho Query, và `-Dtest=JwtEnvironmentTest,ExternalCredentialsTest,AdminEnvironmentTest,AiFeatureDisabledTest`
 cho Command.
 
 Tài liệu AWS tham khảo: [CHIIKAIWA-BE-AWS-DEPLOYMENT-GUIDE.md](CHIIKAIWA-BE-AWS-DEPLOYMENT-GUIDE.md).

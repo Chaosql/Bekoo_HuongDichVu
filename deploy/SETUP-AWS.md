@@ -8,8 +8,9 @@ Bekoo có hai image và nhiều middleware, nên sử dụng Docker Compose trê
 
 - Region mặc định: ap-southeast-1.
 - AMI: Amazon Linux 2023, CPU x86_64 (image ứng dụng là linux/amd64).
-- Chọn máy có tối thiểu khoảng 8 GB RAM cho staging, rồi điều chỉnh theo tải.
-  RAM của AI service chưa được đo, vì vậy đây chưa phải cấu hình bảo đảm cho production.
+- Dự kiến khoảng 8 GB RAM cho staging rồi đo và điều chỉnh theo tải;
+  Kafka, Elasticsearch, MySQL và hai JVM vẫn cần được theo dõi dung lượng RAM.
+- AI là hướng phát triển, không chạy container AI và không cần cấu hình OpenAI.
 - Dùng EBS đủ dung lượng cho MySQL, Kafka, Elasticsearch; bật snapshot/backup.
 - Giữ SSH key riêng. Workflow dùng username ec2-user.
 - Security Group: SSH chỉ cho nguồn cần thiết; 8083/8084 chỉ mở cho nguồn thử nghiệm
@@ -79,7 +80,7 @@ Không dùng file .env local có DB_USER=root để deploy AWS.
 - MYSQL_DATABASE phải khớp database trong DB_URL.
 - Điền REDIS_PASSWORD, ELASTIC_PASSWORD và JWT_SECRET.
 - JWT_SECRET là Base64 của ít nhất 32 byte ngẫu nhiên, dùng chung hai service.
-- Điền cấu hình SMTP/Cloudinary/VNPay/OpenAI cho tính năng cần dùng.
+- Điền cấu hình SMTP/Cloudinary/VNPay cho tính năng cần dùng.
 - ADMIN_EMAIL/ADMIN_PASSWORD có thể để trống để không tự tạo admin.
 - Public URL phải là địa chỉ thực tế, thay các domain example.com trong mẫu.
 
@@ -136,7 +137,7 @@ Concurrency xếp hàng deployment, không hủy run đang thay container.
 - File .env được truyền qua SSH, permission 600.
 - EC2 login ECR bằng IAM Instance Role.
 - Pull cả image theo commit SHA và image middleware.
-- Start MySQL, Redis, Kafka, Elasticsearch, AI; chờ middleware healthy.
+- Start MySQL, Redis, Kafka, Elasticsearch; chờ middleware healthy.
 - Start Query trước, chờ /actuator/health.
 - Start Command, chờ /actuator/health.
 - Ghi nhận SHA thành công trong current-release.
@@ -145,7 +146,7 @@ Concurrency xếp hàng deployment, không hủy run đang thay container.
 Rollback chỉ áp dụng hai ứng dụng, không hoàn tác dữ liệu/schema hoặc mật khẩu
 middleware. Lần deploy đầu chưa có release để rollback.
 Startup health không thay thế smoke test Command → Kafka → Query → Elasticsearch.
-AI không có health endpoint được xác minh trong source repo này.
+Các tính năng AI được tắt mặc định và nằm ngoài phạm vi triển khai hiện tại.
 Chưa có zero-downtime: thay container có thể gây gián đoạn ngắn.
 
 Profile AWS chỉ expose endpoint health, không hiển thị chi tiết và tắt Swagger

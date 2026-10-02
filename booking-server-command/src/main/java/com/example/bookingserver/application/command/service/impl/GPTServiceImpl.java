@@ -14,12 +14,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Component;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 import java.util.ArrayList;
 import java.util.List;
 
 
 @Component
+@ConditionalOnProperty(name = "features.ai.enabled", havingValue = "true")
 @EnableAsync
 @RequiredArgsConstructor
 public class GPTServiceImpl implements GPTService {

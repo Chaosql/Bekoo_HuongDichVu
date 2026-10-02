@@ -44,7 +44,7 @@ rollback() {
     echo "No previous successful release is available for rollback"
   fi
 }
-if ! compose up -d --wait --wait-timeout 300 mysql redis kafka elasticsearch bekoo-ai; then
+if ! compose up -d --wait --wait-timeout 300 mysql redis kafka elasticsearch; then
   echo "Infrastructure is not healthy; application deployment stopped"
   exit 1
 fi

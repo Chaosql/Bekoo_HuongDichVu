@@ -56,6 +56,7 @@ mail:
   user: ${MAIL_USER:}
 spring.url: ${SPRING_URL:http://localhost:8083}
 web.url: ${WEB_URL:http://localhost:8082/home}
-ai.url: ${AI_URL:http://bekoo-ai:5501/ask}
-api.key: ${API_KEY:}
+features:
+  ai:
+    enabled: false
 vnpay.return.url: ${VNPAY_RETURN_URL:http://localhost:8083/payment/result}

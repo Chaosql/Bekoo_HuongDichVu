@@ -50,8 +50,10 @@ public class ChatBotServiceImpl implements ChatBotService {
     final ObjectMapper objectMapper;
     final RedisRepository redisRepository;
 
-    @Value("${ai.url}")
+    @Value("${ai.url:}")
     String URL;
+    @Value("${features.ai.enabled:false}")
+    boolean aiEnabled;
 
     @Override
     public String chat(WebSocketSession adminSession, Map<String, String> data) {
@@ -279,6 +281,9 @@ public class ChatBotServiceImpl implements ChatBotService {
 
     @SneakyThrows
     private String askAI(String prompt, boolean isLogin){
+        if (!aiEnabled) {
+            return "";
+        }
         OkHttpClient client = new OkHttpClient();
         String encodedPrompt = URLEncoder.encode(prompt, StandardCharsets.UTF_8);
         String fullUrl = URL + "?text=" + encodedPrompt + "&isloggedIn=" + isLogin;

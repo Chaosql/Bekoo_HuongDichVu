@@ -8,8 +8,10 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 
 @RestController
+@ConditionalOnProperty(name = "features.ai.enabled", havingValue = "true")
 @RequestMapping("/data")
 @RequiredArgsConstructor
 public class GenerateData {

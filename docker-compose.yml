@@ -76,8 +76,6 @@ services:
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-}
       JWT_SECRET: ${JWT_SECRET:?Fill JWT_SECRET in .env}
       WEB_URL: ${WEB_URL:-http://localhost:8082/home}
-      AI_URL: ${AI_URL:-http://bekoo-ai:5501/ask}
-      API_KEY: ${API_KEY:-}
       VNPAY_PAY_URL: ${VNPAY_PAY_URL:-https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
       VNPAY_RETURN_URL: ${VNPAY_RETURN_URL:-http://localhost:8083/payment/result}
       VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-}
@@ -117,10 +115,6 @@ services:
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:?Fill REDIS_PASSWORD in .env}
       JWT_SECRET: ${JWT_SECRET:?Fill JWT_SECRET in .env}
-
-  bekoo-ai:
-    image: datj114/bekoo-ai:v2.0.0
-    restart: unless-stopped
 
 volumes:
   mysql_data:
