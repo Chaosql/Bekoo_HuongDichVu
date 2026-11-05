@@ -24,16 +24,16 @@ public class OpenAPIConfig {
                 .name("bearerAuth");
         return new OpenAPI()
                 .info(new Info()
-                        .title("Bekoo")
+                        .title("Bekoo_HuongDichVu - Command API")
                         .version("1.0")
                         .description("RestApi for front-end developer")
                         .contact(new Contact()
-                                .name("Roãn Văn Quyền")
-                                .email("roan.dev.backend@gmail.com"))
+                                .name("Chaosql")
+                                .url("https://github.com/Chaosql/Bekoo_HuongDichVu"))
                 )
                 .addServersItem(new Server()
                         .url(springUrl)
-                        .description("Bekoo"))
+                        .description("Bekoo_HuongDichVu Command"))
                 .schemaRequirement("bearerAuth", securityScheme);
     }
 }

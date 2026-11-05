@@ -18,16 +18,16 @@ public class OpenAPIConfig {
     public OpenAPI customOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Bekoo")
+                        .title("Bekoo_HuongDichVu - Query API")
                         .version("1.0")
                         .description("RestApi for front-end developer")
                         .contact(new Contact()
-                                .name("Roãn Văn Quyền")
-                                .email("roan.dev.backend@gmail.com"))
+                                .name("Chaosql")
+                                .url("https://github.com/Chaosql/Bekoo_HuongDichVu"))
                 )
                 .addServersItem(new Server()
                         .url(springUrl)
-                        .description("Query"))
+                        .description("Bekoo_HuongDichVu Query"))
                 ;
     }
 

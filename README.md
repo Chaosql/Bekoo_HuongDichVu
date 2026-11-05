@@ -1,62 +1,27 @@
 # Bekoo_HuongDichVu
 
-Backend Bekoo gồm ba module: thư viện sự kiện dùng chung, Command (MySQL)
-và Query (Elasticsearch). Source gốc: https://github.com/RoanDevBackend/Bekoo;
-giữ nguyên LICENSE. Hướng dẫn gốc nằm trong README-BEKOO.md.
+Backend Bekoo gồm thư viện sự kiện `booking-care-document`, Command dùng MySQL và Query dùng Elasticsearch; hai backend trao đổi qua Kafka và dùng Redis. Repository: [Chaosql/Bekoo_HuongDichVu](https://github.com/Chaosql/Bekoo_HuongDichVu). Giữ nguyên [LICENSE](LICENSE).
 
-## Cấu hình và chạy local
+## Deploy AWS EC2
 
-1. Copy `.env.example` thành `.env` và điền các giá trị riêng.
-2. Điền MYSQL_ROOT_PASSWORD, DB_PASSWORD, REDIS_PASSWORD, ELASTIC_PASSWORD
-   và JWT_SECRET. Khi dùng MySQL local với user root, hai mật khẩu MySQL phải
-   giống nhau. JWT_SECRET là Base64 của ít nhất 32 byte ngẫu nhiên
-   (có thể tạo bằng `openssl rand -base64 32`) và dùng chung cho hai service.
-3. Điền Cloudinary, SMTP và VNPay nếu sử dụng các tính năng tương ứng.
-4. Để ADMIN_EMAIL/ADMIN_PASSWORD trống nếu không cần tạo admin lúc khởi động.
-   Nếu tạo admin, điền cả email, password và các trường ADMIN_* về hồ sơ;
-   ADMIN_DOB dùng định dạng YYYY-MM-DD. Không có mật khẩu admin mặc định.
+Luồng duy nhất: **GitHub Actions build/test → Amazon ECR → SSH EC2 → Docker Compose → health check/rollback**. Hai backend deploy cùng commit SHA. MySQL cài trực tiếp trên EC2; Kafka, Redis và Elasticsearch chạy trong container. EC2 không build source Java.
 
-Chạy tại thư mục gốc của repo bằng Docker Compose v2:
+- [Hướng dẫn setup EC2, MySQL, ECR, IAM, DNS và GitHub Secrets](deploy/aws/SETUP-AWS.md)
+- [Mẫu cấu hình GitHub secret BEKOO_ENV](deploy/aws/env.aws.example)
+- [Workflow CI/CD](.github/workflows/deploy-aws.yml)
+- [Kết quả kiểm tra](deploy/aws/VALIDATION.md)
 
-```bash
-docker compose config --quiet
-docker compose up -d --build
-```
+Bật repository variable `AWS_DEPLOY_ENABLED=true` sau khi hoàn tất hạ tầng và secrets. Khi chưa bật, workflow chỉ chạy verify. Secret thật không được commit; runtime env trên EC2 có quyền 0600.
 
-Command: http://localhost:8083; Query: http://localhost:8084.
-Compose build source trong repo này, không chạy image backend cũ từ Docker Hub.
-MySQL, Redis, Kafka và Elasticsearch chỉ truy cập qua mạng Docker nội bộ.
-AI chỉ là hướng phát triển, được tắt mặc định: không deploy AI container,
-không yêu cầu AI endpoint hoặc OpenAI API key. API sinh dữ liệu bằng GPT cũng
-không được đăng ký. Luồng chat với quản trị viên vẫn được giữ.
-Các compose trong từng module chuyển tới stack gốc qua `include`;
-chức năng này cần Docker Compose 2.20 trở lên.
+## Build và kiểm tra
 
-Spring Boot chạy trực tiếp không tự đọc .env; phải truyền environment variables
-cho từng JVM, đặc biệt SERVER_PORT và SPRING_URL riêng cho Command/Query.
-Mật khẩu của MySQL/Elasticsearch trong volume đã tồn tại cần đổi trên dịch vụ,
-không tự thay đổi khi sửa .env.
-
-Không commit .env. Các credential từng nằm trong source cũ cần được revoke/rotate;
-xóa khỏi source mới không làm credential cũ trở nên an toàn.
-
-## Build
-
-Yêu cầu JDK 17 và Maven (hoặc Maven Wrapper):
+Yêu cầu Java 17. GitHub Actions thực hiện các lệnh tương ứng:
 
 ```bash
-./booking-server-query/mvnw -f booking-care-document/pom.xml clean install
-./booking-server-command/mvnw -f booking-server-command/pom.xml clean package -DskipTests
-./booking-server-query/mvnw -f booking-server-query/pom.xml clean package -DskipTests
+bash booking-server-query/mvnw -B -f booking-care-document/pom.xml clean install
+bash booking-server-command/mvnw -B -f booking-server-command/pom.xml clean verify '-Dtest=*Test'
+bash booking-server-query/mvnw -B -f booking-server-query/pom.xml clean verify '-Dtest=*Test'
+python3 -m unittest discover -s deploy/aws/tests -v
 ```
 
-Các test context gốc cần các dịch vụ ngoài và cấu hình runtime.
-Unit test về credential có thể chạy riêng bằng `-Dtest=JwtEnvironmentTest`
-cho Query, và `-Dtest=JwtEnvironmentTest,ExternalCredentialsTest,AdminEnvironmentTest,AiFeatureDisabledTest`
-cho Command.
-
-Tài liệu AWS tham khảo: [CHIIKAIWA-BE-AWS-DEPLOYMENT-GUIDE.md](CHIIKAIWA-BE-AWS-DEPLOYMENT-GUIDE.md).
-Pipeline AWS đã có trong .github/workflows/deploy-aws.yml.
-Theo lựa chọn chạy MySQL/Redis trên EC2, xem [deploy/SETUP-AWS.md](deploy/SETUP-AWS.md).
-AWS deployment chỉ chạy khi AWS_DEPLOY_ENABLED=true và các GitHub Secrets
-đã cấu hình đầy đủ; chưa có tài nguyên AWS nào được tự động tạo bởi repo.
+Hai context test `*ApplicationTests` cần hạ tầng live; kiểm chứng end-to-end trên EC2 theo checklist trong hướng dẫn AWS. AI tắt mặc định; SMTP, Cloudinary, VNPay và admin cần cấu hình tương ứng nếu sử dụng.

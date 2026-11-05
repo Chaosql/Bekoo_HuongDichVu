@@ -44,3 +44,12 @@ build/
 .env
 .env.*
 !.env.example
+
+# Python deployment helper/test caches.
+__pycache__/
+*.pyc
+
+# Deployment runtime secrets: commit only the .example templates.
+/deploy/aws/*.env
+/deploy/aws/backup.conf
+/deploy/aws/my-backup.cnf

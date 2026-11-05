@@ -14,3 +14,8 @@ booking-server-query/target/*
 **/.env.*
 **/*.pem
 **/*.key
+
+# Runtime credentials stay outside Docker build contexts.
+**/*.env
+**/backup.conf
+**/my-backup.cnf

@@ -1,0 +1,13 @@
+-- Run as MySQL administrator; replace passwords BEFORE executing.
+-- Subnet must match compose.yaml; never use '%' or root for the backend.
+CREATE DATABASE IF NOT EXISTS booking_care_command CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'bekoo_command'@'172.30.83.0/255.255.255.0' IDENTIFIED BY 'REPLACE_WITH_DATABASE_PASSWORD';
+GRANT SELECT, INSERT, UPDATE, DELETE, EXECUTE ON booking_care_command.* TO 'bekoo_command'@'172.30.83.0/255.255.255.0';
+-- Fresh schema only: temporarily grant CREATE, ALTER, INDEX, REFERENCES for Hibernate bootstrap.
+-- Revoke those privileges once schema exists and DB_DDL_AUTO=validate is healthy.
+-- Use a dedicated migration account and versioned migrations for future schema changes.
+
+CREATE USER 'mysql_backup'@'172.30.83.1' IDENTIFIED BY 'REPLACE_WITH_BACKUP_PASSWORD';
+GRANT SELECT, SHOW VIEW, TRIGGER, EVENT ON booking_care_command.* TO 'mysql_backup'@'172.30.83.1';
+-- MySQL 8.0.20+: SHOW_ROUTINE allows dumping routines; confirm server version before granting.
+GRANT SHOW_ROUTINE ON *.* TO 'mysql_backup'@'172.30.83.1';

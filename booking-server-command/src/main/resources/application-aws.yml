@@ -1,13 +1,15 @@
 spring:
   datasource:
     hikari:
-      maximum-pool-size: 10
-      minimum-idle: 2
+      maximum-pool-size: 5
+      minimum-idle: 1
   jpa:
     show-sql: false
     properties:
       hibernate:
         format_sql: false
+    hibernate:
+      ddl-auto: ${DB_DDL_AUTO:validate}
 management:
   endpoints:
     web:
@@ -25,6 +27,11 @@ springdoc:
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
 logging:
+  config: classpath:logback-aws.xml
   level:
     root: INFO
     com.example: INFO
+server:
+  port: 8080
+  address: 0.0.0.0
+  forward-headers-strategy: framework

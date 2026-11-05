@@ -1,0 +1,151 @@
+services:
+  kafka:
+    image: apache/kafka:3.9.1
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+    volumes:
+    - kafka_data:/var/lib/kafka/data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    mem_limit: 1g
+  redis:
+    image: redis:7
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    command:
+    - sh
+    - -ec
+    - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    volumes:
+    - redis_data:/data
+    env_file:
+    - path: ./infra.env
+      format: raw
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    mem_limit: 256m
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - curl --fail --silent --user "elastic:$$ELASTIC_PASSWORD" "http://localhost:9200/_cluster/health?wait_for_status=yellow&timeout=5s"
+        >/dev/null
+      interval: 15s
+      timeout: 10s
+      retries: 12
+      start_period: 60s
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      cluster.name: docker-cluster
+      xpack.security.enabled: 'true'
+      xpack.security.http.ssl.enabled: 'false'
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+    - es_data:/usr/share/elasticsearch/data
+    env_file:
+    - path: ./infra.env
+      format: raw
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    mem_limit: 1536m
+  command:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX_REQUIRED}/bekoo-command:${IMAGE_TAG:?IMAGE_TAG_REQUIRED}
+    restart: unless-stopped
+    extra_hosts:
+    - bekoo.mysql.internal:172.30.83.1
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:${COMMAND_HOST_PORT:?PORT_REQUIRED}:8080
+    environment:
+      SPRING_PROFILES_ACTIVE: aws
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=65.0
+    env_file:
+    - path: ./command.env
+      format: raw
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+  query:
+    image: ${IMAGE_PREFIX:?IMAGE_PREFIX_REQUIRED}/bekoo-query:${IMAGE_TAG:?IMAGE_TAG_REQUIRED}
+    restart: unless-stopped
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:${QUERY_HOST_PORT:?PORT_REQUIRED}:8080
+    environment:
+      SPRING_PROFILES_ACTIVE: aws
+      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=65.0
+    env_file:
+    - path: ./query.env
+      format: raw
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+volumes:
+  redis_data: null
+  kafka_data: null
+  es_data: null
+networks:
+  default:
+    name: bekoo-backend
+    external: true

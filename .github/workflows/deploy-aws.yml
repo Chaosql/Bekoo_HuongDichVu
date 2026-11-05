@@ -1,84 +1,114 @@
-name: Build and Deploy Bekoo to AWS EC2
+name: Bekoo CI and deploy to AWS EC2
 on:
+  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: bekoo-aws
+  group: bekoo-aws-${{ github.ref }}
+  # Let an in-flight SSH deployment finish/rollback.
   cancel-in-progress: false
 env:
   AWS_REGION: ${{ vars.AWS_REGION || 'ap-southeast-1' }}
 jobs:
-  build-and-deploy:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-      - name: Set up JDK 17
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4
         with:
           java-version: '17'
           distribution: temurin
           cache: maven
-      - name: Build shared library
-        run: ./booking-server-query/mvnw -f booking-care-document/pom.xml clean install -B
-      - name: Build and test Command
-        run: ./booking-server-command/mvnw -f booking-server-command/pom.xml clean package -B -Dtest=JwtEnvironmentTest,ExternalCredentialsTest,AdminEnvironmentTest,AiFeatureDisabledTest
-      - name: Build and test Query
-        run: ./booking-server-query/mvnw -f booking-server-query/pom.xml clean package -B -Dtest=JwtEnvironmentTest
-      - name: Build runtime-only images
-        run: |
-          docker build -f booking-server-command/aws.Dockerfile -t bekoo-command:"$GITHUB_SHA" .
-          docker build -f booking-server-query/aws.Dockerfile -t bekoo-query:"$GITHUB_SHA" .
-      - name: Deployment status
-        if: vars.AWS_DEPLOY_ENABLED != 'true'
-        run: echo "Build completed. Configure AWS secrets and set AWS_DEPLOY_ENABLED=true to deploy."
-      - name: Validate deployment secrets
-        if: vars.AWS_DEPLOY_ENABLED == 'true'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
-          EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
-          BEKOO_ENV: ${{ secrets.BEKOO_ENV }}
-        run: |
-          for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY EC2_HOST EC2_SSH_KEY EC2_KNOWN_HOSTS BEKOO_ENV; do
-            if [[ -z "${!name}" ]]; then
-              echo "::error::Missing GitHub Secret: $name"
-              exit 1
-            fi
-          done
-      - name: Configure AWS credentials
-        if: vars.AWS_DEPLOY_ENABLED == 'true'
-        uses: aws-actions/configure-aws-credentials@e3dd6a429d7300a6a4c196c26e071d42e0343502
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Login to ECR
-        if: vars.AWS_DEPLOY_ENABLED == 'true'
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076
-      - name: Push images to ECR
-        if: vars.AWS_DEPLOY_ENABLED == 'true'
-        env:
-          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+      - name: Build shared event library
+        run: bash booking-server-query/mvnw -B -f booking-care-document/pom.xml clean install
+      - name: Verify Command and Query, then package executable JARs
+        # *ApplicationTests need live external services and are covered by the EC2 integration checklist.
         run: |
           for service in command query; do
-            repository="bekoo-$service"
-            docker tag "$repository:$GITHUB_SHA" "$ECR_REGISTRY/$repository:$GITHUB_SHA"
-            docker tag "$repository:$GITHUB_SHA" "$ECR_REGISTRY/$repository:latest"
-            docker push "$ECR_REGISTRY/$repository:$GITHUB_SHA"
-            docker push "$ECR_REGISTRY/$repository:latest"
+            bash "booking-server-$service/mvnw" -B -f "booking-server-$service/pom.xml" clean verify '-Dtest=*Test'
           done
-      - name: Deploy over SSH and verify health
-        if: vars.AWS_DEPLOY_ENABLED == 'true'
+      - name: Validate runtime bundle and deploy failure scenarios
+        run: |
+          python3 -m unittest discover -s deploy/aws/tests -v
+          for script in deploy/aws/server/*.sh; do bash -n "$script"; done
+          staging=$(mktemp -d)
+          cp deploy/aws/compose.yaml "$staging/compose.yaml"
+          for name in command query infra release; do cp "deploy/aws/$name.env.example" "$staging/$name.env"; done
+          docker compose --env-file "$staging/release.env" -f "$staging/compose.yaml" config --quiet
+      - name: Upload verified JARs
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ENABLED == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: bekoo-jars
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            booking-server-command/target/booking-server-command-0.0.1-SNAPSHOT.jar
+            booking-server-query/target/booking-server-query-0.0.1-SNAPSHOT.jar
+  release:
+    needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AWS_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: bekoo-jars
+          path: .
+      - name: Authenticate to AWS with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a # v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Login to ECR
+        id: ecr
+        run: |
+          set -euo pipefail
+          account=$(aws sts get-caller-identity --query Account --output text)
+          registry="$account.dkr.ecr.$AWS_REGION.amazonaws.com"
+          aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$registry"
+          echo "registry=$registry" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Publish Command image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: booking-server-command/aws.Dockerfile
+          platforms: ${{ vars.AWS_PLATFORM || 'linux/amd64' }}
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/bekoo-command:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/bekoo-command:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Publish Query image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: booking-server-query/aws.Dockerfile
+          platforms: ${{ vars.AWS_PLATFORM || 'linux/amd64' }}
+          push: true
+          tags: |
+            ${{ steps.ecr.outputs.registry }}/bekoo-query:${{ github.sha }}
+            ${{ steps.ecr.outputs.registry }}/bekoo-query:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+      - name: Prepare runtime files and deploy exact SHA over verified SSH
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_SSH_USER || 'ubuntu' }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
           BEKOO_ENV: ${{ secrets.BEKOO_ENV }}
@@ -86,18 +116,18 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          [[ "$EC2_HOST" =~ ^[a-zA-Z0-9.-]+$ ]] || exit 2
-          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]] || exit 2
-          [[ "$AWS_REGION" =~ ^[a-z]{2}-[a-z]+-[0-9]+$ ]] || exit 2
-          [[ "$ECR_REGISTRY" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com$ ]] || exit 2
-          staging="$RUNNER_TEMP/bekoo-$GITHUB_SHA"
-          mkdir -p "$staging"
+          [[ "$EC2_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]] || exit 2
+          [[ "$EC2_USER" =~ ^[a-z_][a-z0-9_-]*$ ]] || exit 2
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 2
+          test -n "$EC2_SSH_KEY" && test -n "$EC2_KNOWN_HOSTS"
+          staging=$(mktemp -d "$RUNNER_TEMP/bekoo.XXXXXX")
+          trap 'rm -rf "$staging"' EXIT
           printf '%s\n' "$EC2_SSH_KEY" > "$staging/key"
           printf '%s\n' "$EC2_KNOWN_HOSTS" > "$staging/known_hosts"
-          chmod 600 "$staging/key" "$staging/known_hosts"
-          python3 deploy/prepare-release.py "$staging/release"
+          python3 deploy/aws/prepare-release.py "$staging/release"
+          cp deploy/aws/server/activate-release.sh "$staging/release/activate-release.sh"
           options=(-i "$staging/key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$staging/known_hosts" -o ConnectTimeout=20)
-          remote="/home/ec2-user/bekoo/releases/$GITHUB_SHA"
-          ssh "${options[@]}" "ec2-user@$EC2_HOST" "umask 077; mkdir -p '$remote'"
-          scp "${options[@]}" "$staging/release/.env" "$staging/release/compose.aws.yml" "$staging/release/deploy-ec2.sh" "ec2-user@$EC2_HOST:$remote/"
-          ssh "${options[@]}" "ec2-user@$EC2_HOST" "bash '$remote/deploy-ec2.sh' '$AWS_REGION' '$ECR_REGISTRY' '$GITHUB_SHA'"
+          remote="bekoo/incoming/$GITHUB_SHA"
+          ssh "${options[@]}" "$EC2_USER@$EC2_HOST" "umask 077; mkdir -p '$remote'"
+          scp "${options[@]}" "$staging/release/"* "$EC2_USER@$EC2_HOST:$remote/"
+          ssh "${options[@]}" "$EC2_USER@$EC2_HOST" "bash '$remote/activate-release.sh' '$GITHUB_SHA' '$ECR_REGISTRY'"
