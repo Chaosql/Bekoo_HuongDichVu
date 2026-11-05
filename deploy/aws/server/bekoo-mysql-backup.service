@@ -1,6 +1,6 @@
 [Unit]
 Description=Monthly MySQL backup to Amazon S3
-After=mysql.service network-online.target
+After=mysqld.service network-online.target
 Wants=network-online.target
 
 [Service]

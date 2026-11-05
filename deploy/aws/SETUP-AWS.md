@@ -45,75 +45,119 @@ Trên EC2, dưới home của **cùng user SSH/Docker**:
 
 Toàn bộ cấu hình triển khai tập trung trong `deploy/aws/`. Việc sửa repo không tự tạo hạ tầng hay chuyển dữ liệu trên server.
 
-## 2. Chuẩn bị EC2 một lần
+## 2. Amazon Linux 2023 / máy demo 4 GiB hiện tại
 
-Phương án hướng dẫn chính: **Ubuntu 24.04 hoặc 22.04**, Docker Engine và Compose plugin >= **2.30** (`env_file.format: raw`), AWS CLI v2. x86 dùng `AWS_PLATFORM=linux/amd64`; Graviton dùng `linux/arm64`. Runtime stack có giới hạn RAM container tổng khoảng 4.75 GiB, chưa tính MySQL/OS; dành khoảng 8 GiB RAM trở lên và kiểm tra tải thực tế. Không giả định instance đủ miễn phí hoặc stack chạy được trên máy 1 GiB.
+Mục tiêu hiện tại: **Amazon Linux 2023 x86_64**, user **ec2-user**, region **ap-southeast-1**, Elastic IP đã xác minh **54.255.60.109**. Máy đã nâng từ 2 GiB lên 4 GiB; MySQL Community **8.4.13 EL9** đã được cài bằng DNF nhưng chưa cấu hình/chạy. Đây là phiên bản package đã kiểm tra dependency trên máy của bạn; MySQL không liệt kê AL2023 trong nền tảng Yum được hỗ trợ chính thức. Không dùng script Ubuntu hoặc `apt`.
 
-1. Tạo EC2, storage đủ cho database/images/volumes; kiểm tra giá và hạn mức trong account.
-2. Security Group: public **80/443**; SSH **22** chỉ từ nguồn quản trị/CI được kiểm soát. Không public 3306, 6379, 9092, 9200, 8083, 8084.
-3. Workflow dùng SSH trực tiếp tới `EC2_HOST`. GitHub-hosted runner không có một IP cố định: dùng runner có egress IP cố định hoặc self-hosted runner có đường tới EC2, cấu hình SG cho đúng nguồn. Nếu dùng self-hosted runner, đổi `runs-on` **của job release**; job verify PR giữ runner riêng, không chạy PR không tin cậy trên runner deploy. Không mở SSH toàn Internet để xử lý lỗi timeout. Private EC2 cần runner có route vào VPC hoặc cơ chế kết nối quản trị riêng.
-4. Cài Docker từ [kho chính thức](https://docs.docker.com/engine/install/ubuntu/), AWS CLI v2 từ [hướng dẫn AWS](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html). Trên Graviton chọn bản CLI aarch64; trên x86 chọn x86_64.
-5. Dùng user `ubuntu` mặc định hoặc user deploy riêng; cấp quyền Docker cho user này (quyền Docker tương đương root). Thêm public key CI vào `~/.ssh/authorized_keys`. Không copy private SSH key vào repo.
+Mặc định Compose đã chỉnh cho demo **2–3 người**:
+
+| Service | Heap Java | Container RAM tối đa |
+|---|---|---|
+| Command | 96–256 MiB | 576 MiB |
+| Query | 96–224 MiB | 512 MiB |
+| Kafka | 128–192 MiB | 448 MiB |
+| Elasticsearch | 256 MiB | 768 MiB |
+| Redis | maxmemory 48 MiB, noeviction | 96 MiB |
+
+Tổng giới hạn container **2400 MiB (~2.34 GiB)**. MySQL có buffer pool 128 MiB, tối đa 20 kết nối; đây không phải giới hạn RSS của MySQL. Phần còn lại dành cho OS/Chiikaiwa/PostgreSQL hiện có. Giữ swap 2 GiB đã có. Đây là cấu hình thử nghiệm, cần đo RAM khi chạy thật; không bảo đảm chạy ổn định cùng các ứng dụng khác chỉ dựa trên số người dùng. Khi thiếu RAM, giảm tải hoặc tạm dừng ứng dụng khác trong cửa sổ demo bằng quyết định của bạn; script không dừng Chiikaiwa/PostgreSQL/Redis cũ.
+
+Compose phải >= **2.30** (hoặc 5.x) và AWS CLI v2. Docker hiện hữu được giữ nguyên, không cài lại/restart trong luồng backend deploy.
 
 ```bash
-sudo apt update
-sudo apt install -y curl jq python3 nginx age gzip openssh-server
-sudo systemctl enable --now docker nginx ssh
-sudo sysctl -w vm.max_map_count=262144
-printf 'vm.max_map_count=262144\n' | sudo tee /etc/sysctl.d/90-bekoo-elasticsearch.conf
+sudo dnf install -y curl jq python3 nginx openssl tar gzip
 uname -m
 free -h
-df -h
+swapon --show
 docker compose version
 aws --version
 ```
 
-Amazon Linux: cài Docker, Compose, AWS CLI và **MySQL chính thức tương thích OS** bằng hướng dẫn riêng. Không chạy apt/installer Ubuntu trên Amazon Linux; việc dùng SSH user `ec2-user` không tự làm installer tương thích.
-
-## 3. MySQL native, bridge và schema
-
-Không có MySQL server container trong stack. MySQL trên EC2 lắng nghe tại gateway cố định **172.30.83.1:3306** của external bridge **bekoo-backend**, subnet **172.30.83.0/24**. Container Command ánh xạ `bekoo.mysql.internal` tới địa chỉ đó. Đây là IP cố định của bridge Bekoo, không phải `host-gateway` mặc định và không phải loopback container.
-
-Từ máy phát triển, chuyển **bộ script provisioning** sang EC2 (không chuyển source Java):
+Nếu Compose thiếu/cũ, cài plugin x86_64 cho user ec2-user theo [Docker](https://docs.docker.com/compose/install/linux/). Ví dụ phiên bản trong hướng dẫn Docker hiện tại:
 
 ```bash
-tar -czf /tmp/bekoo-aws-runtime.tar.gz deploy/aws
-scp /tmp/bekoo-aws-runtime.tar.gz ubuntu@YOUR_EC2_HOST:/tmp/
+mkdir -p ~/.docker/cli-plugins
+curl -fL https://github.com/docker/compose/releases/download/v5.6.0/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
+chmod +x ~/.docker/cli-plugins/docker-compose
+docker compose version
 ```
 
-Trên EC2:
+Dùng cùng user `ec2-user` cho Docker/SSH; không cài plugin chỉ cho root rồi deploy bằng ec2-user. Nếu AWS CLI chưa có, cài bản Linux x86_64 theo [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
+
+Security Group chỉ public 80/443; SSH 22 từ nguồn quản trị/CI được kiểm soát; không public 3306, 6379, 9092, 9200, 8083, 8084. Redis cũ đang publish 6379: kiểm tra SG để chắc chắn không cho Internet truy cập. Workflow dùng SSH trực tiếp: GitHub-hosted runner không có IP cố định, nên cần runner có egress IP cố định hoặc self-hosted runner có route tới EC2 và đổi `runs-on` của **job release**. Job PR verify vẫn dùng GitHub-hosted runner, không dùng runner deploy cho PR không tin cậy.
+
+## 3. Chạy script cho MySQL đã cài trên server này
+
+Từ **máy phát triển**, tại thư mục gốc repo sau khi có các thay đổi mới:
 
 ```bash
-mkdir -p /tmp/bekoo-provision
-cd /tmp/bekoo-provision
-tar -xzf /tmp/bekoo-aws-runtime.tar.gz
-ip route
-docker network ls
-bash deploy/aws/server/setup-network.sh --create
-# CHỈ cho Ubuntu mới, chưa có MySQL/MariaDB/dữ liệu hay cổng 3306 đang dùng:
-sudo bash deploy/aws/server/setup-mysql-ec2.sh --install-fresh
+tar --exclude=__pycache__ --exclude='*.pyc' --exclude='*.env' --exclude=backup.conf --exclude=my-backup.cnf -czf /tmp/bekoo-aws-runtime.tar.gz deploy/aws
+scp /tmp/bekoo-aws-runtime.tar.gz ec2-user@54.255.60.109:/tmp/
 ```
 
-Installer từ chối máy có database hiện hữu, không import/drop/reset database. Với MySQL đã tồn tại: backup trước; cấu hình thủ công `bind-address=172.30.83.1` (hoặc thêm địa chỉ này nếu đang phục vụ app khác), tắt MySQL X nếu không dùng và đặt service khởi động sau Docker. Không thay bind-address đang dùng bởi dự án khác một cách máy móc. Bridge external không bị xóa bởi `compose down`.
+Nếu key SSH không nằm trong SSH agent, thêm `-i /PATH/TO/YOUR_KEY.pem` vào scp/ssh. Archive chỉ chứa runtime/templates/scripts, không có source Java hay secrets thật.
 
-Áp dụng firewall host cho nguồn subnet Bekoo tới 3306, chặn nguồn khác; SG không mở 3306. Kiểm tra quy tắc Docker/iptables, không chỉ dựa vào UFW. Nếu subnet đã trùng mạng có sẵn, đổi đồng bộ network script, Compose, URL mapping, preflight, MySQL bind/grants và firewall trước khi dùng.
+Trên **EC2**, chạy bằng user ec2-user (các script được thực thi bằng bash, dùng được dù shell đăng nhập là fish):
 
 ```bash
-sudo systemctl status mysql --no-pager
+mkdir -p ~/bekoo-provision
+tar -xzf /tmp/bekoo-aws-runtime.tar.gz -C ~/bekoo-provision
+cd ~/bekoo-provision
+sudo bash deploy/aws/server/setup-mysql-ec2.sh --configure-existing
+```
+
+Đây là lệnh đúng cho máy hiện tại vì package MySQL đã cài. Script kiểm tra Amazon Linux 2023 x86_64/MySQL 8.4, tạo/kiểm tra bridge `bekoo-backend` (172.30.83.0/24, gateway 172.30.83.1), sao lưu cấu hình, cài `mysql-demo.cnf`, kiểm tra `mysqld --validate-config`, rồi enable/start **mysqld.service**. Nó không xóa/khởi tạo lại thư mục dữ liệu, không đổi mật khẩu hay tạo/drop schema. Nếu có MySQL đang chạy mà chưa có cấu hình Bekoo do script quản lý, script từ chối thay đổi để không ảnh hưởng database khác.
+
+MySQL chỉ bind **127.0.0.1 và 172.30.83.1**, không bind public interface. `bekoo.mysql.internal` trong Command ánh xạ tới gateway này. Systemd kiểm tra/tạo lại bridge bằng script root trước khi MySQL khởi động sau reboot. Kiểm tra subnet không trùng `ip route`; nếu trùng, không xóa network hiện có mà phải điều chỉnh đồng bộ cấu hình. Giới hạn firewall host cho subnet Bekoo tới 3306; SG không mở database ra ngoài.
+
+Cho một máy AL2023 x86_64 khác chưa cài MySQL, tùy chọn `--install-fresh` sẽ cài 8.4 từ repo EL9, giữ kiểm tra GPG, từ chối nếu package/dữ liệu đã tồn tại. Không dùng tùy chọn này trên máy bạn vừa cài. Script lưu repo `bekoo-mysql84` để các lần cập nhật MySQL sau có nguồn, không đổi global releasever của Amazon Linux.
+
+Kiểm tra:
+
+```bash
+sudo systemctl status mysqld --no-pager
 sudo ss -lntp | grep ':3306'
 docker network inspect bekoo-backend
 ```
 
-Sửa mật khẩu trong `deploy/aws/mysql.sql.example` rồi chạy bằng MySQL administrator. Backend dùng user **bekoo_command**, database **booking_care_command**, quyền runtime DML/EXECUTE, host giới hạn subnet. Không dùng root cho backend. Secret GitHub phải khớp tài khoản đã tạo.
+**Đăng nhập root lần đầu:** RPM tạo mật khẩu tạm khi service khởi động lần đầu. Xem riêng trên terminal (không gửi/log mật khẩu này vào chat):
 
-**Schema:** profile AWS mặc định `DB_DDL_AUTO=validate`. Dự án chưa có Flyway/Liquibase; database rỗng chưa chạy được ngay. Chọn một cách:
+```bash
+sudo grep 'temporary password' /var/log/mysqld.log
+sudo env MYSQL_HISTFILE=/dev/null mysql --connect-expired-password -u root -p
+```
 
-- Có dữ liệu cũ: dump/restore vào MySQL trên EC2, dừng ghi khi chuyển dữ liệu cuối và kiểm tra schema/row count/API.
-- Database hoàn toàn mới: cấp tạm `CREATE, ALTER, INDEX, REFERENCES` trên database cho user ứng dụng; đặt `DB_DDL_AUTO=update` trong `BEKOO_ENV`; deploy để tạo schema, kiểm tra bảng; đổi secret lại `validate`, thu hồi quyền DDL và chạy workflow lại. Script recreate kể cả cùng SHA để áp dụng runtime env mới.
+Trong MySQL, đổi mật khẩu root (thay placeholder bằng mật khẩu mạnh thực tế), rồi thoát:
 
-Không chạy lại `update` như migration production mặc định. Các thay đổi schema sau này cần migration được review; rollback image không rollback dữ liệu/schema.
+```sql
+ALTER USER 'root'@'localhost' IDENTIFIED BY 'REPLACE_WITH_STRONG_ROOT_PASSWORD';
+EXIT;
+```
 
-Preflight CD dùng client image `mysql:8.0`, chạy `SELECT 1` trên network ứng dụng, truyền mật khẩu qua environment, không command line/log. Kiểm tra này xác nhận kết nối, user và database; không thay thế validate schema hay kiểm tra nghiệp vụ. EC2 cần pull được image client và các image hạ tầng từ registry tương ứng.
+Sửa `deploy/aws/mysql.sql.example` trên EC2 bằng editor với password thật, rồi đăng nhập root, `SOURCE` file SQL đó:
+
+```bash
+sudo env MYSQL_HISTFILE=/dev/null mysql -u root -p
+```
+
+```sql
+SOURCE /home/ec2-user/bekoo-provision/deploy/aws/mysql.sql.example;
+```
+
+File SQL tạo database **booking_care_command**, user **bekoo_command** chỉ từ subnet Docker và user backup riêng. Không dùng root cho backend. Mật khẩu user ứng dụng phải khớp `DB_PASSWORD` trong GitHub `BEKOO_ENV`; file SQL đã điền mật khẩu phải giữ ngoài Git và chmod 600. Không chạy lại `CREATE USER` nếu user đã tồn tại; quản trị user hiện hữu riêng.
+
+**Database mới chưa có bảng:** mặc định `DB_DDL_AUTO=validate` sẽ không tạo bảng. Trong MySQL cấp quyền bootstrap tạm:
+
+```sql
+GRANT CREATE, ALTER, INDEX, REFERENCES ON booking_care_command.* TO 'bekoo_command'@'172.30.83.0/255.255.255.0';
+```
+
+Đặt `DB_DDL_AUTO=update` trong GitHub secret cho lần deploy đầu, xác nhận các bảng/API hoạt động; sau đó đổi lại `validate`, thu hồi các quyền DDL tạm và chạy workflow lại. Dự án chưa có Flyway/Liquibase; các thay đổi schema sau này cần review, không tự động rollback DB khi rollback image.
+
+```sql
+REVOKE CREATE, ALTER, INDEX, REFERENCES ON booking_care_command.* FROM 'bekoo_command'@'172.30.83.0/255.255.255.0';
+```
+
+Có dữ liệu cũ: dump/restore có kiểm soát thay vì bootstrap rỗng. Preflight CD dùng MySQL client container chạy SELECT 1 trên bridge trước khi thay backend; nó không cài/restart MySQL native.
 
 ## 4. ECR và IAM
 
@@ -162,7 +206,7 @@ Repository Settings → Actions cho phép workflow. Tạo Environment **producti
 | AWS_DEPLOY_ENABLED | `true` khi EC2/IAM/secret sẵn sàng; chưa đặt thì chỉ CI verify |
 | AWS_REGION | Ví dụ `ap-southeast-1` |
 | AWS_PLATFORM | `linux/amd64` cho x86, `linux/arm64` cho Graviton |
-| EC2_SSH_USER | `ubuntu` mặc định, hoặc user deploy thực tế |
+| EC2_SSH_USER | `ec2-user` (mặc định cho Amazon Linux hiện tại) |
 
 **Environment production secrets:**
 
@@ -198,7 +242,7 @@ VNPAY_RETURN_URL=https://bekoo-command.chiikaiwa.me/payment/result
 3. Job verify build thư viện document trước, chạy Maven `clean verify -Dtest=*Test` cho Command/Query; toàn bộ unit test `*Test` phải pass. Hai context `*ApplicationTests` cần hạ tầng live không thuộc tập unit test này.
 4. Artifact chỉ chứa đúng hai executable JAR, dùng lại ở job release; không build Maven lần nữa trên EC2.
 5. Release qua OIDC push hai image, truyền runtime bundle bằng SCP và chạy activation qua SSH. Runtime secret 0600, thư mục 0700. Không in `.env`/`docker compose config` thật ra log.
-6. Trên EC2: khóa deploy → preflight bridge/MySQL → đăng nhập ECR bằng Instance Role → pull/verify revision hai image → chờ hạ tầng healthy → recreate hai backend → đối chiếu image ID và `/actuator/health` cả hai.
+6. Trên EC2: khóa deploy → preflight bridge/MySQL → đăng nhập ECR bằng Instance Role → pull/verify revision hai image → chờ hạ tầng healthy → khởi động Command và chờ healthy, rồi Query → đối chiếu image ID và `/actuator/health` cả hai.
 
 Chạy dưới đúng user SSH để kiểm tra:
 
@@ -232,14 +276,16 @@ Trong DNS Namecheap, thêm hai A record:
 
 DNS dùng IP public EC2; cân nhắc địa chỉ ổn định và kiểm tra phí IPv4/Elastic IP. Không thay record domain gốc nếu đang phục vụ website khác.
 
-Cài `nginx.conf.example` vào `/etc/nginx/sites-available/bekoo.conf`, symlink vào `sites-enabled`, sửa domain/cổng nếu cần. Cấu hình proxy loopback 8083/8084, chặn actuator public, giới hạn upload 12 MiB cho Command.
+Trên Amazon Linux, cài `nginx.conf.example` vào `/etc/nginx/conf.d/bekoo.conf`, sửa domain/cổng nếu cần; giữ các server block hiện có của Chiikaiwa. Cấu hình proxy loopback 8083/8084, chặn actuator public, giới hạn upload 12 MiB cho Command.
 
 ```bash
+sudo install -m 644 deploy/aws/nginx.conf.example /etc/nginx/conf.d/bekoo.conf
 sudo nginx -t
+sudo systemctl enable --now nginx
 sudo systemctl reload nginx
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d bekoo-command.chiikaiwa.me -d bekoo-query.chiikaiwa.me
 ```
+
+Cài Certbot theo [hướng dẫn Certbot](https://certbot.eff.org/instructions) phù hợp Amazon Linux/RPM hoặc Python venv; không dùng apt. Sau khi cài, chạy `sudo certbot --nginx -d bekoo-command.chiikaiwa.me -d bekoo-query.chiikaiwa.me`, xác minh cơ chế tự renew. Chưa có chứng chỉ thì thử HTTP nội bộ trước, không dùng HTTPS URL khi TLS chưa sẵn sàng.
 
 Frontend dùng hai base URL đầy đủ `https://bekoo-command.chiikaiwa.me` và `https://bekoo-query.chiikaiwa.me` kèm API path. DNS phải trỏ đúng và SG cho 80/443 trước khi cấp TLS.
 

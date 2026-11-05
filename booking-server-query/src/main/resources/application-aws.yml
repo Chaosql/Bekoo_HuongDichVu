@@ -27,3 +27,7 @@ server:
   port: 8080
   address: 0.0.0.0
   forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: 20
+      min-spare: 2

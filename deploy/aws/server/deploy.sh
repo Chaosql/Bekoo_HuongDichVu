@@ -44,18 +44,21 @@ revision() {
   image=$(docker inspect -f '{{.Image}}' "$container")
   docker image inspect -f '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image"
 }
-healthy() {
-  local attempt port ok
-  for ((attempt=0; attempt<60; attempt++)); do
-    ok=true
-    for port in "$COMMAND_PORT" "$QUERY_PORT"; do
-      if ! curl -fsS --max-time 3 "http://127.0.0.1:$port/actuator/health" 2>/dev/null \
-        | jq -e '.status == "UP"' >/dev/null; then ok=false; fi
-    done
-    if "$ok"; then return 0; fi
+healthy_port() {
+  local port="$1" attempt
+  for ((attempt=0; attempt<90; attempt++)); do
+    if curl -fsS --max-time 3 "http://127.0.0.1:$port/actuator/health" 2>/dev/null \
+      | jq -e '.status == "UP"' >/dev/null; then return 0; fi
     sleep 5
   done
   return 1
+}
+healthy() { healthy_port "$COMMAND_PORT" && healthy_port "$QUERY_PORT"; }
+start_backends() {
+  compose up -d --no-build --no-deps --force-recreate command || return 1
+  healthy_port "$COMMAND_PORT" || return 1
+  compose up -d --no-build --no-deps --force-recreate query || return 1
+  healthy_port "$QUERY_PORT" || return 1
 }
 verify_images() {
   local service container actual expected label
@@ -96,7 +99,7 @@ rollback() {
     done
   fi
   write_release "$OLD"
-  if compose up -d --no-build --no-deps --force-recreate command query && verify_images "$OLD" && healthy; then
+  if start_backends && verify_images "$OLD" && healthy; then
     echo "Rollback healthy: $OLD" >&2
   else
     echo 'ROLLBACK FAILED: manual recovery required' >&2
@@ -107,7 +110,7 @@ rollback() {
 compose up -d --wait --wait-timeout 240 kafka redis elasticsearch
 trap rollback ERR INT TERM
 write_release "$SHA"
-compose up -d --no-build --no-deps --force-recreate command query
+start_backends
 verify_images "$SHA"
 healthy
 trap - ERR INT TERM

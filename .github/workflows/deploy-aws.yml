@@ -108,7 +108,7 @@ jobs:
       - name: Prepare runtime files and deploy exact SHA over verified SSH
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
-          EC2_USER: ${{ vars.EC2_SSH_USER || 'ubuntu' }}
+          EC2_USER: ${{ vars.EC2_SSH_USER || 'ec2-user' }}
           EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
           EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
           BEKOO_ENV: ${{ secrets.BEKOO_ENV }}

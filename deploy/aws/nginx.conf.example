@@ -1,4 +1,4 @@
-# Replace both domains. Install in /etc/nginx/sites-available/bekoo.conf.
+# Replace both domains. Install in /etc/nginx/conf.d/bekoo.conf.
 map $http_upgrade $bekoo_connection_upgrade {
     default upgrade;
     '' close;

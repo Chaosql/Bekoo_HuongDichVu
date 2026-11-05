@@ -1,3 +1,4 @@
+# Demo: 2-3 concurrent testers on Amazon Linux 2023 / 4 GiB RAM.
 services:
   kafka:
     image: apache/kafka:3.9.1
@@ -25,8 +26,12 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_LOG_RETENTION_HOURS: 168
-      KAFKA_LOG_RETENTION_BYTES: 1073741824
-      KAFKA_HEAP_OPTS: -Xms256m -Xmx512m
+      KAFKA_LOG_RETENTION_BYTES: 268435456
+      KAFKA_HEAP_OPTS: -Xms128m -Xmx192m
+      KAFKA_NUM_NETWORK_THREADS: 2
+      KAFKA_NUM_IO_THREADS: 2
+      KAFKA_LOG_CLEANER_DEDUPE_BUFFER_SIZE: 33554432
+      KAFKA_LOG_SEGMENT_BYTES: 67108864
     volumes:
     - kafka_data:/var/lib/kafka/data
     logging:
@@ -34,7 +39,7 @@ services:
       options:
         max-size: 10m
         max-file: '3'
-    mem_limit: 1g
+    mem_limit: 448m
   redis:
     image: redis:7
     healthcheck:
@@ -48,7 +53,7 @@ services:
     command:
     - sh
     - -ec
-    - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD"
+    - exec redis-server --appendonly yes --requirepass "$$REDIS_PASSWORD" --maxmemory 48mb --maxmemory-policy noeviction
     volumes:
     - redis_data:/data
     env_file:
@@ -59,7 +64,7 @@ services:
       options:
         max-size: 10m
         max-file: '3'
-    mem_limit: 256m
+    mem_limit: 96m
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
     healthcheck:
@@ -74,10 +79,11 @@ services:
     restart: unless-stopped
     environment:
       discovery.type: single-node
-      ES_JAVA_OPTS: -Xms512m -Xmx512m
+      ES_JAVA_OPTS: -Xms256m -Xmx256m
       cluster.name: docker-cluster
       xpack.security.enabled: 'true'
       xpack.security.http.ssl.enabled: 'false'
+      xpack.ml.enabled: 'false'
     ulimits:
       memlock:
         soft: -1
@@ -92,7 +98,7 @@ services:
       options:
         max-size: 10m
         max-file: '3'
-    mem_limit: 1536m
+    mem_limit: 768m
   command:
     image: ${IMAGE_PREFIX:?IMAGE_PREFIX_REQUIRED}/bekoo-command:${IMAGE_TAG:?IMAGE_TAG_REQUIRED}
     restart: unless-stopped
@@ -107,11 +113,11 @@ services:
     - 127.0.0.1:${COMMAND_HOST_PORT:?PORT_REQUIRED}:8080
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=65.0
+      JAVA_TOOL_OPTIONS: -Xms96m -Xmx256m -Xss512k -XX:MaxDirectMemorySize=48m -XX:+ExitOnOutOfMemoryError
     env_file:
     - path: ./command.env
       format: raw
-    mem_limit: 1g
+    mem_limit: 576m
     logging:
       driver: json-file
       options:
@@ -127,15 +133,17 @@ services:
         condition: service_healthy
       elasticsearch:
         condition: service_healthy
+      command:
+        condition: service_started
     ports:
     - 127.0.0.1:${QUERY_HOST_PORT:?PORT_REQUIRED}:8080
     environment:
       SPRING_PROFILES_ACTIVE: aws
-      JAVA_TOOL_OPTIONS: -XX:MaxRAMPercentage=65.0
+      JAVA_TOOL_OPTIONS: -Xms96m -Xmx224m -Xss512k -XX:MaxDirectMemorySize=48m -XX:+ExitOnOutOfMemoryError
     env_file:
     - path: ./query.env
       format: raw
-    mem_limit: 1g
+    mem_limit: 512m
     logging:
       driver: json-file
       options:

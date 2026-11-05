@@ -22,7 +22,8 @@ if a[:2] == ['network', 'inspect']:
 if a[0] == 'login': sys.stdin.read(); sys.exit(0)
 if a[0] == 'run': sys.exit(1 if s.get('db_failure') else 0)
 if name == 'curl':
-    print('{"status":"DOWN"}' if s.get('unhealthy') and s['running'].get('query') == 'b'*40 else '{"status":"UP"}')
+    service = 'command' if ':8083/' in a[-1] else 'query'
+    print('{"status":"DOWN"}' if s.get('unhealthy') and s['running'].get(service) == 'b'*40 else '{"status":"UP"}')
     sys.exit(0)
 if a[0] == 'compose':
     assert 'IMAGE_TAG' not in os.environ and 'IMAGE_PREFIX' not in os.environ
@@ -33,9 +34,12 @@ if a[0] == 'compose':
     if a[:2] == ['ps','-q']:
         if s['running'].get(a[2]): print(a[2])
     elif a[0] == 'up':
-        if 'command' in a:
+        if 'command' in a or 'query' in a:
             tag = next(x.split('=',1)[1] for x in pathlib.Path('release.env').read_text().splitlines() if x.startswith('IMAGE_TAG='))
-            s['running'] = dict(command=tag, query=tag)
+            for service in ('command', 'query'):
+                if service in a:
+                    s['running'][service] = tag
+                    s.setdefault('starts', []).append({'service': service, 'sha': tag})
             p.write_text(json.dumps(s))
         elif s.get('infra_failure'): sys.exit(1)
 elif a[0] == 'pull':
@@ -81,6 +85,7 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(state['running'], dict(command=NEW, query=NEW))
         self.assertIn(NEW, release)
+        self.assertEqual(state['starts'], [{'service': 'command', 'sha': NEW}, {'service': 'query', 'sha': NEW}])
 
     def test_same_sha_recreates_to_apply_runtime_env(self):
         result, state, release = self.deploy(running=dict(command=NEW, query=NEW))
@@ -94,6 +99,12 @@ class DeploymentTests(unittest.TestCase):
         self.assertEqual(state['running'], dict(command=OLD, query=OLD))
         self.assertIn(OLD, release)
         self.assertIn('Rollback healthy', result.stderr)
+
+    def test_query_is_not_started_if_new_command_never_becomes_healthy(self):
+        result, state, release = self.deploy(unhealthy=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotIn({'service': 'query', 'sha': NEW}, state.get('starts', []))
+        self.assertEqual(state['running'], dict(command=OLD, query=OLD))
 
     def test_pull_failure_preserves_release(self):
         result, state, release = self.deploy(pull_failure=True)

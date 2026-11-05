@@ -1,7 +1,7 @@
 spring:
   datasource:
     hikari:
-      maximum-pool-size: 5
+      maximum-pool-size: 3
       minimum-idle: 1
   jpa:
     show-sql: false
@@ -35,3 +35,7 @@ server:
   port: 8080
   address: 0.0.0.0
   forward-headers-strategy: framework
+  tomcat:
+    threads:
+      max: 20
+      min-spare: 2
