@@ -110,7 +110,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-    - 127.0.0.1:${COMMAND_HOST_PORT:?PORT_REQUIRED}:8080
+    - 0.0.0.0:${COMMAND_HOST_PORT:?PORT_REQUIRED}:8080
     environment:
       SPRING_PROFILES_ACTIVE: aws
       JAVA_TOOL_OPTIONS: -Xms96m -Xmx256m -Xss512k -XX:MaxDirectMemorySize=48m -XX:+ExitOnOutOfMemoryError
@@ -136,7 +136,7 @@ services:
       command:
         condition: service_started
     ports:
-    - 127.0.0.1:${QUERY_HOST_PORT:?PORT_REQUIRED}:8080
+    - 0.0.0.0:${QUERY_HOST_PORT:?PORT_REQUIRED}:8080
     environment:
       SPRING_PROFILES_ACTIVE: aws
       JAVA_TOOL_OPTIONS: -Xms96m -Xmx224m -Xss512k -XX:MaxDirectMemorySize=48m -XX:+ExitOnOutOfMemoryError

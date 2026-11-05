@@ -30,7 +30,7 @@ class PreparationTests(unittest.TestCase):
             self.assertNotIn('DB_PASSWORD', (dest / 'query.env').read_text())
             self.assertNotIn('JWT_SECRET', (dest / 'infra.env').read_text())
             self.assertEqual((dest / 'command.env').stat().st_mode & 0o777, 0o600)
-            self.assertIn('SPRING_URL=https://bekoo-query.chiikaiwa.me', (dest / 'query.env').read_text())
+            self.assertIn('SPRING_URL=http://54.255.60.109:8084', (dest / 'query.env').read_text())
             self.assertFalse(any(dest.rglob('*.java')))
 
     def test_root_and_remote_database_are_rejected(self):

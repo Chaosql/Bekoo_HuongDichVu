@@ -83,7 +83,7 @@ docker compose version
 
 Dùng cùng user `ec2-user` cho Docker/SSH; không cài plugin chỉ cho root rồi deploy bằng ec2-user. Nếu AWS CLI chưa có, cài bản Linux x86_64 theo [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
 
-Security Group chỉ public 80/443; SSH 22 từ nguồn quản trị/CI được kiểm soát; không public 3306, 6379, 9092, 9200, 8083, 8084. Redis cũ đang publish 6379: kiểm tra SG để chắc chắn không cho Internet truy cập. Workflow dùng SSH trực tiếp: GitHub-hosted runner không có IP cố định, nên cần runner có egress IP cố định hoặc self-hosted runner có route tới EC2 và đổi `runs-on` của **job release**. Job PR verify vẫn dùng GitHub-hosted runner, không dùng runner deploy cho PR không tin cậy.
+Demo bằng IP: Security Group mở TCP 8083 và 8084 cho người test; SSH 22 từ nguồn quản trị/CI được kiểm soát; không public 3306, 6379, 9092, 9200. Redis cũ đang publish 6379: kiểm tra SG để chắc chắn không cho Internet truy cập. Workflow dùng SSH trực tiếp: GitHub-hosted runner không có IP cố định, nên cần runner có egress IP cố định hoặc self-hosted runner có route tới EC2 và đổi `runs-on` của **job release**. Job PR verify vẫn dùng GitHub-hosted runner, không dùng runner deploy cho PR không tin cậy.
 
 ## 3. Chạy script cho MySQL đã cài trên server này
 
@@ -265,29 +265,20 @@ APPS_ROOT="$HOME/bekoo" bash "$HOME/bekoo/runtime/deploy.sh" runtime OLD_FULL_40
 
 `SIGKILL`, mất điện hoặc Docker daemon chết giữa deploy không bảo đảm rollback tức thời; sau reboot đối chiếu image/release.env và health. Tránh `docker system prune -a`/`compose down -v`; chúng có thể làm mất image rollback/dữ liệu.
 
-## 7. Domain chiikaiwa.me, Nginx và HTTPS
+## 7. Truy cập demo bằng IP và cổng
 
-Trong DNS Namecheap, thêm hai A record:
+Không cần DNS hoặc Nginx cho luồng demo hiện tại. Trong Security Group của EC2, thêm inbound TCP 8083 và 8084 từ IP của người test (hoặc 0.0.0.0/0 nếu cần truy cập công khai).
 
-| Host | Value |
-|---|---|
-| bekoo-command | Public IPv4 EC2 |
-| bekoo-query | Public IPv4 EC2 |
+| Backend | Base URL | Swagger |
+|---|---|---|
+| Command | http://54.255.60.109:8083 | http://54.255.60.109:8083/swagger-ui/index.html |
+| Query | http://54.255.60.109:8084 | http://54.255.60.109:8084/swagger-ui/index.html |
 
-DNS dùng IP public EC2; cân nhắc địa chỉ ổn định và kiểm tra phí IPv4/Elastic IP. Không thay record domain gốc nếu đang phục vụ website khác.
+Trong `.env.aws` / secret `BEKOO_ENV`, dùng `SPRING_COMMAND_URL=http://54.255.60.109:8083`, `SPRING_QUERY_URL=http://54.255.60.109:8084`, `SWAGGER_ENABLED=true`. `VNPAY_RETURN_URL` dùng cùng IP/cổng Command với path `/payment/result`. `WEB_URL` vẫn là địa chỉ frontend thực tế.
 
-Trên Amazon Linux, cài `nginx.conf.example` vào `/etc/nginx/conf.d/bekoo.conf`, sửa domain/cổng nếu cần; giữ các server block hiện có của Chiikaiwa. Cấu hình proxy loopback 8083/8084, chặn actuator public, giới hạn upload 12 MiB cho Command.
+Compose publish hai cổng trên mọi interface. Khi chuyển từ bản chỉ bind loopback, cập nhật `~/bekoo/runtime/compose.yaml` trong lần bảo trì trước khi chạy workflow, vì CD sẽ từ chối thay đổi topology tự động. Chỉ recreate Command và Query, giữ các volume và dịch vụ hạ tầng.
 
-```bash
-sudo install -m 644 deploy/aws/nginx.conf.example /etc/nginx/conf.d/bekoo.conf
-sudo nginx -t
-sudo systemctl enable --now nginx
-sudo systemctl reload nginx
-```
-
-Cài Certbot theo [hướng dẫn Certbot](https://certbot.eff.org/instructions) phù hợp Amazon Linux/RPM hoặc Python venv; không dùng apt. Sau khi cài, chạy `sudo certbot --nginx -d bekoo-command.chiikaiwa.me -d bekoo-query.chiikaiwa.me`, xác minh cơ chế tự renew. Chưa có chứng chỉ thì thử HTTP nội bộ trước, không dùng HTTPS URL khi TLS chưa sẵn sàng.
-
-Frontend dùng hai base URL đầy đủ `https://bekoo-command.chiikaiwa.me` và `https://bekoo-query.chiikaiwa.me` kèm API path. DNS phải trỏ đúng và SG cho 80/443 trước khi cấp TLS.
+Frontend dùng base URL đầy đủ tương ứng rồi nối API path. Frontend chạy HTTPS sẽ bị trình duyệt chặn khi gọi backend HTTP (mixed content); với demo này có thể dùng Swagger trực tiếp hoặc frontend HTTP/local. Mẫu `nginx.conf.example` dành cho khi cần bổ sung domain/HTTPS sau này.
 
 ## 8. Backup MySQL lên S3
 
@@ -322,7 +313,7 @@ Restore drill: tải `.age` và `.sha256`, `sha256sum -c FILE.sha256`, giải m�
 - MySQL user/grants/bind/firewall được thử từ Docker bridge; 3306/Redis/Kafka/Elasticsearch không public.
 - Thử deploy đầu, cùng SHA sau thay env, SHA mới, pull lỗi, health lỗi và rollback thật trên EC2.
 - Login và luồng ghi Command → Kafka → Query/Elasticsearch hoạt động; thử SMTP/upload/VNPay nếu dùng.
-- Nginx/TLS đúng domain; health chỉ nội bộ; kiểm tra reboot và disk/RAM.
+- Hai cổng 8083/8084 và Swagger truy cập được bằng IP; kiểm tra reboot và disk/RAM.
 - Backup/upload/restore test thành công, có retention và cảnh báo lỗi/lỡ lịch.
 
 Bộ file được kiểm tra local; repo không tự tạo EC2/ECR/IAM hay thay đổi GitHub Secrets. Không coi kiểm tra mô phỏng rollback là xác nhận hệ thống đã chạy end-to-end trên AWS.
