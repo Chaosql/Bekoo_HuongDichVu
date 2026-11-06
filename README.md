@@ -1,138 +1,139 @@
 # Bekoo - ServerSide
 
-[![GitHub License](https://img.shields.io/github/license/Chaosql/Bekoo_HuongDichVu)](LICENSE)
-[![GitHub contributors](https://img.shields.io/github/contributors/Chaosql/Bekoo_HuongDichVu)](https://github.com/Chaosql/Bekoo_HuongDichVu/graphs/contributors)
-[![CI and AWS deployment](https://github.com/Chaosql/Bekoo_HuongDichVu/actions/workflows/deploy-aws.yml/badge.svg)](https://github.com/Chaosql/Bekoo_HuongDichVu/actions/workflows/deploy-aws.yml)
+[![Giấy phép GitHub](https://img.shields.io/github/license/Chaosql/Bekoo_HuongDichVu)](LICENSE)
+[![Người đóng góp](https://img.shields.io/github/contributors/Chaosql/Bekoo_HuongDichVu)](https://github.com/Chaosql/Bekoo_HuongDichVu/graphs/contributors)
+[![Kiểm tra và triển khai AWS](https://github.com/Chaosql/Bekoo_HuongDichVu/actions/workflows/deploy-aws.yml/badge.svg)](https://github.com/Chaosql/Bekoo_HuongDichVu/actions/workflows/deploy-aws.yml)
 
-## Table of contents
+## Mục lục
 
-- [Introduction](#introduction)
-- [Architecture](#architecture)
-- [Prerequisites](#prerequisites)
-- [Installation and deployment](#installation-and-deployment)
-- [API documentation](#api-documentation)
-- [Build and verification](#build-and-verification)
-- [Contributing](#contributing)
-- [Contact](#contact)
-- [License](#license)
+- [Giới thiệu](#giới-thiệu)
+- [Kiến trúc hệ thống](#kiến-trúc-hệ-thống)
+- [Yêu cầu chuẩn bị](#yêu-cầu-chuẩn-bị)
+- [Cài đặt và triển khai](#cài-đặt-và-triển-khai)
+- [Tài liệu API](#tài-liệu-api)
+- [Build và kiểm tra](#build-và-kiểm-tra)
+- [Đóng góp](#đóng-góp)
+- [Liên hệ](#liên-hệ)
+- [Giấy phép](#giấy-phép)
 
-## Introduction
+## Giới thiệu
 
-**Bekoo** — Your health, simplified. Book a doctor's appointment anytime, anywhere. Select a preferred doctor, choose a convenient time slot, and manage appointments through a healthcare booking system.
+**Bekoo** giúp việc đặt lịch khám và quản lý sức khỏe trở nên thuận tiện hơn. Người dùng có thể lựa chọn bác sĩ, chọn khung giờ phù hợp và quản lý lịch hẹn mọi lúc, mọi nơi.
 
-This repository contains the Bekoo backend, implemented with Java 17 and Spring Boot. It separates commands and queries using CQRS and exchanges events through Apache Kafka.
+Repository này chứa phần backend của Bekoo, được xây dựng bằng Java 17 và Spring Boot. Hệ thống áp dụng kiến trúc CQRS để tách xử lý ghi và đọc dữ liệu, trao đổi sự kiện thông qua Apache Kafka.
 
-## Architecture
+## Kiến trúc hệ thống
 
-| Module / service | Purpose |
+| Module / dịch vụ | Vai trò |
 |---|---|
-| `booking-server-command` | Handles write operations, stores application data in MySQL, and publishes Kafka events. |
-| `booking-server-query` | Handles read operations and maintains Elasticsearch data from Kafka events. |
-| `booking-care-document` | Shared Java library containing event definitions, response models, and constants; packaged into both backend applications. |
-| Apache Kafka | Transfers events between Command and Query. |
-| Elasticsearch | Provides the Query service's search and read storage. |
-| Redis | Provides caching and temporary data storage. |
+| `booking-server-command` | Xử lý thao tác ghi, lưu dữ liệu vào MySQL và phát sự kiện Kafka. |
+| `booking-server-query` | Xử lý truy vấn, cập nhật dữ liệu Elasticsearch từ các sự kiện Kafka. |
+| `booking-care-document` | Thư viện Java dùng chung, chứa định nghĩa sự kiện, các kiểu dữ liệu phản hồi và hằng số; được đóng gói vào cả hai backend. |
+| Apache Kafka | Truyền sự kiện giữa Command và Query. |
+| Elasticsearch | Lưu dữ liệu phục vụ tìm kiếm và truy vấn của Query. |
+| Redis | Lưu bộ nhớ đệm và dữ liệu tạm thời. |
 
-Command and Query run as separate applications. The shared library does not require a separate container or port.
+Command và Query chạy thành hai ứng dụng riêng. Thư viện dùng chung không cần container hoặc cổng riêng.
 
-## Prerequisites
+## Yêu cầu chuẩn bị
 
-For building the project:
+Để build dự án:
 
 - Git.
-- Java 17. Maven wrappers are included in the backend modules.
-- Python 3 for deployment script checks.
+- Java 17. Các module backend đã có Maven Wrapper.
+- Python 3 để kiểm tra các script triển khai.
 
-For deployment:
+Để triển khai:
 
-- An AWS EC2 instance running Amazon Linux 2023, x86_64. The current demo configuration targets 4 GiB RAM and 2–3 concurrent testers.
-- [Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose](https://docs.docker.com/compose/install/), version 2.30 or newer, on EC2.
-- MySQL installed directly on EC2; the current setup uses MySQL Community 8.4.
-- Amazon ECR repositories, IAM roles, and GitHub Actions environment configuration as described in the [AWS setup guide](deploy/aws/SETUP-AWS.md).
+- AWS EC2 chạy Amazon Linux 2023, kiến trúc x86_64. Cấu hình demo hiện tại dành cho máy 4 GiB RAM và 2–3 người thử nghiệm đồng thời.
+- [Docker Engine](https://docs.docker.com/engine/install/) và [Docker Compose](https://docs.docker.com/compose/install/) phiên bản 2.30 trở lên trên EC2.
+- MySQL cài trực tiếp trên EC2; cấu hình hiện tại sử dụng MySQL Community 8.4.
+- Các repository Amazon ECR, IAM role và môi trường GitHub Actions theo [hướng dẫn thiết lập AWS](deploy/aws/SETUP-AWS.md).
 
-## Installation and deployment
+## Cài đặt và triển khai
 
-### 1. Clone the repository
+### 1. Tải mã nguồn
 
 ```bash
 git clone https://github.com/Chaosql/Bekoo_HuongDichVu.git
 cd Bekoo_HuongDichVu
 ```
 
-### 2. Configure the deployment environment
+### 2. Cấu hình biến môi trường
 
-Copy the environment template on your computer:
+Với lần thiết lập đầu tiên, sao chép file mẫu trên máy cá nhân:
 
 ```bash
 cp deploy/aws/env.aws.example .env.aws
 chmod 600 .env.aws
 ```
 
-For an existing checkout with a configured `.env.aws`, keep that file instead of replacing it with the template.
+Nếu đã có `.env.aws` được cấu hình, hãy giữ file đó, tránh ghi đè bằng file mẫu.
 
-Fill in the required values, then save the file contents as the GitHub Actions secret `BEKOO_ENV` in the `production` environment. Keep actual passwords, tokens, and SSH private keys out of Git.
+Điền các giá trị bắt buộc, sau đó lưu toàn bộ nội dung file vào GitHub Actions secret `BEKOO_ENV` trong môi trường `production`. Không commit mật khẩu, token hoặc khóa SSH riêng tư vào Git.
 
-For an existing schema, use `DB_DDL_AUTO=validate`. Use `update` only for the initial schema bootstrap described in the setup guide. Email, Cloudinary, VNPay, and administrator seeding require their corresponding environment values before those features can be tested.
+Khi database đã có cấu trúc bảng, dùng `DB_DDL_AUTO=validate`. Chỉ dùng `update` cho lần khởi tạo bảng đầu tiên theo hướng dẫn triển khai. Các chức năng email, Cloudinary, VNPay và tạo tài khoản quản trị ban đầu cần được điền các biến tương ứng trước khi thử nghiệm.
 
-### 3. Prepare AWS and deploy
+### 3. Chuẩn bị AWS và triển khai
 
-Follow [SETUP-AWS.md](deploy/aws/SETUP-AWS.md) to configure EC2, native MySQL, Docker networking, ECR, IAM, and GitHub secrets and variables.
+Làm theo [SETUP-AWS.md](deploy/aws/SETUP-AWS.md) để cấu hình EC2, MySQL trên máy chủ, mạng Docker, ECR, IAM và các secret, variable của GitHub.
 
-The deployment flow is:
+Luồng triển khai:
 
 ```text
-Push to main → GitHub Actions build and verify → Amazon ECR
-             → SSH to EC2 → Docker Compose → Health checks / rollback
+Push lên main → GitHub Actions build và kiểm tra → Amazon ECR
+              → SSH vào EC2 → Docker Compose
+              → Kiểm tra trạng thái / khôi phục phiên bản trước khi lỗi
 ```
 
-Set the repository variable `AWS_DEPLOY_ENABLED=true` after provisioning is complete. Push to `main`, or manually run the [deployment workflow](https://github.com/Chaosql/Bekoo_HuongDichVu/actions/workflows/deploy-aws.yml). Command and Query deploy using the same commit SHA.
+Đặt repository variable `AWS_DEPLOY_ENABLED=true` sau khi chuẩn bị xong hạ tầng. Push lên nhánh `main` hoặc chạy thủ công [workflow triển khai](https://github.com/Chaosql/Bekoo_HuongDichVu/actions/workflows/deploy-aws.yml). Command và Query được triển khai với cùng một commit SHA.
 
-EC2 pulls prebuilt images; it does not build Java source. Kafka, Redis, and Elasticsearch run in Docker alongside the two backends. Deployment files are stored in `~/bekoo/runtime` on EC2.
+EC2 tải các image đã build sẵn. Kafka, Redis và Elasticsearch chạy trong Docker cùng hai backend. Các file phục vụ triển khai được lưu tại `~/bekoo/runtime` trên EC2.
 
-The Compose file is located at `deploy/aws/compose.yaml` and requires generated runtime environment files, ECR images, and a provisioned Docker network. Running `docker compose up -d` from the repository root is not the setup flow for this repository.
+File Compose nằm tại `deploy/aws/compose.yaml`, cần các file biến môi trường đã được tạo, image trên ECR và mạng Docker đã được chuẩn bị. Để khởi chạy đúng cấu hình, thực hiện theo hướng dẫn AWS thay vì chạy `docker compose up -d` tại thư mục gốc repository.
 
-## API documentation
+## Tài liệu API
 
-The current demo uses the EC2 public IP with separate backend ports:
+Bản demo hiện tại sử dụng IP công khai của EC2 và hai cổng backend riêng:
 
-| Backend | Base URL | Swagger UI |
+| Backend | Địa chỉ gốc | Tài liệu Swagger |
 |---|---|---|
-| Command | `http://54.255.60.109:8083` | [Command Swagger](http://54.255.60.109:8083/swagger-ui/index.html) |
-| Query | `http://54.255.60.109:8084` | [Query Swagger](http://54.255.60.109:8084/swagger-ui/index.html) |
+| Command | `http://54.255.60.109:8083` | [Swagger Command](http://54.255.60.109:8083/swagger-ui/index.html) |
+| Query | `http://54.255.60.109:8084` | [Swagger Query](http://54.255.60.109:8084/swagger-ui/index.html) |
 
-Enable `SWAGGER_ENABLED=true` in `BEKOO_ENV` and allow inbound TCP ports 8083 and 8084 in the EC2 Security Group. When deploying to another server, update the IP in the application URLs and firewall rules.
+Đặt `SWAGGER_ENABLED=true` trong `BEKOO_ENV` và mở kết nối TCP vào cổng 8083, 8084 trong Security Group của EC2. Khi chuyển sang máy chủ khác, cập nhật IP trong các URL của ứng dụng và quy tắc tường lửa.
 
-Use Command APIs for write operations and Query APIs for reads. Some legacy read endpoints in Command are marked deprecated and appear crossed out in Swagger. Endpoints that require authentication need a valid bearer token entered through **Authorize**.
+Dùng API Command cho thao tác ghi và API Query cho thao tác đọc. Một số API đọc cũ trong Command được đánh dấu `deprecated` nên hiển thị gạch ngang trong Swagger. Với API yêu cầu xác thực, nhập bearer token hợp lệ qua nút **Authorize**.
 
-The demo URLs use HTTP. A frontend served over HTTPS requires an HTTPS backend endpoint or a suitable HTTPS proxy to avoid browser mixed-content restrictions.
+Các URL demo sử dụng HTTP. Nếu frontend chạy bằng HTTPS, cần backend HTTPS hoặc proxy HTTPS phù hợp để tránh trình duyệt chặn nội dung hỗn hợp (mixed content).
 
-## Build and verification
+## Build và kiểm tra
 
-Run these commands from the repository root:
+Chạy các lệnh sau từ thư mục gốc repository:
 
 ```bash
-# Install the shared library first.
+# Build và cài thư viện dùng chung vào kho Maven cục bộ trước.
 bash booking-server-query/mvnw -B -f booking-care-document/pom.xml clean install
 
-# Build and run the selected backend tests.
+# Build và chạy các bài kiểm tra backend được chọn.
 bash booking-server-command/mvnw -B -f booking-server-command/pom.xml clean verify '-Dtest=*Test'
 bash booking-server-query/mvnw -B -f booking-server-query/pom.xml clean verify '-Dtest=*Test'
 
-# Verify deployment preparation and failure handling.
+# Kiểm tra việc chuẩn bị triển khai và xử lý lỗi.
 python3 -m unittest discover -s deploy/aws/tests -v
 ```
 
-The `*ApplicationTests` context tests require live external services and are outside the selected test pattern above. See [VALIDATION.md](deploy/aws/VALIDATION.md) for verification details and the AWS guide for deployment checks.
+Các bài kiểm tra khởi tạo ứng dụng `*ApplicationTests` cần các dịch vụ bên ngoài đang chạy và không nằm trong mẫu chọn test ở trên. Xem [VALIDATION.md](deploy/aws/VALIDATION.md) để biết chi tiết kiểm tra và hướng dẫn AWS để kiểm chứng khi triển khai.
 
-## Contributing
+## Đóng góp
 
-Contributions are welcome. Open an [issue](https://github.com/Chaosql/Bekoo_HuongDichVu/issues) to report a bug or discuss a change, then submit a pull request with a clear description and relevant verification results.
+Mọi đóng góp đều được hoan nghênh. Bạn có thể tạo [issue](https://github.com/Chaosql/Bekoo_HuongDichVu/issues) để báo lỗi hoặc trao đổi về thay đổi, sau đó gửi pull request kèm mô tả rõ ràng và kết quả kiểm tra liên quan.
 
-## Contact
+## Liên hệ
 
 - GitHub: [Chaosql](https://github.com/Chaosql)
-- Project discussions and bug reports: [GitHub Issues](https://github.com/Chaosql/Bekoo_HuongDichVu/issues)
+- Trao đổi về dự án và báo lỗi: [GitHub Issues](https://github.com/Chaosql/Bekoo_HuongDichVu/issues)
 
-## License
+## Giấy phép
 
-This project is licensed under the [GNU General Public License v3.0](LICENSE).
+Dự án được cấp phép theo [GNU General Public License v3.0](LICENSE).
