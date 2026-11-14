@@ -1,0 +1,10 @@
+[Unit]
+Description=Run MySQL backup monthly at 10:00 Vietnam time
+
+[Timer]
+OnCalendar=*-*-01 10:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+Unit=bekoo-mysql-backup.service
+
+[Install]
+WantedBy=timers.target
